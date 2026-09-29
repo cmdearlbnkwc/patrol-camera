@@ -413,80 +413,26 @@
 
   async function onScanSuccess(decodedText) {
 
-    if (sendingQR) {
-      return;
-    }
+  if (sendingQR) {
+    return;
+  }
 
+  const raw = String(decodedText || "").trim();
 
-    const qr = extractQR(decodedText);
+  if (!raw) {
+    return;
+  }
 
+  sendingQR = true;
 
-    if (!qr) {
+  setStatus(
+    "✅ กล้องอ่าน QR ได้แล้ว\n\n" +
+    "ข้อมูลที่อ่านได้:\n" +
+    raw
+  );
 
-      setStatus(
-        "⚠️ พบ QR แต่ไม่ใช่ QR จุดตรวจของระบบ",
-        "error"
-      );
-
-      return;
-    }
-
-
-    sendingQR = true;
-
-
-    setStatus(
-      "⏳ พบ " + qr +
-      "\nกำลังส่งกลับระบบ..."
-    );
-
-
-    try {
-
-      /*
-        ส่ง QR กลับหน้าระบบตรวจเวร
-      */
-
-      if (!window.opener) {
-
-        throw new Error(
-          "ไม่พบหน้าระบบตรวจเวรเดิม"
-        );
-      }
-
-
-      window.opener.postMessage(
-
-        {
-          type: "PATROL_QR_SCAN",
-          qr: qr
-        },
-
-        "*"
-
-      );
-
-
-      setStatus(
-        "⏳ ส่ง " + qr +
-        " ไปตรวจสอบแล้ว..."
-      );
-
-
-    } catch (error) {
-
-      sendingQR = false;
-
-
-      setStatus(
-        "❌ ไม่สามารถส่ง QR กลับระบบได้",
-        "error"
-      );
-
-
-      document.getElementById("debug").textContent =
-        String(error);
-    }
+  document.getElementById("debug").textContent =
+    "RAW QR = " + raw;
   }
 
 

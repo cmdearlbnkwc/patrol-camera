@@ -1,14 +1,18 @@
 <!DOCTYPE html>
+
 <html lang="th">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+
   <title>สแกน QR - ระบบตรวจเวร</title>
 
   <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
 
   <style>
-    * { box-sizing: border-box; }
+    * {
+      box-sizing: border-box;
+    }
 
     body {
       margin: 0;
@@ -43,6 +47,7 @@
       background: #000;
       border-radius: 16px;
       overflow: hidden;
+      min-height: 100px;
     }
 
     .status {
@@ -55,8 +60,13 @@
       white-space: pre-line;
     }
 
-    .success { background: #14532d; }
-    .error { background: #7f1d1d; }
+    .success {
+      background: #14532d;
+    }
+
+    .error {
+      background: #7f1d1d;
+    }
 
     .button {
       width: 100%;
@@ -67,6 +77,12 @@
       font-size: 17px;
       font-weight: 600;
       cursor: pointer;
+      -webkit-appearance: none;
+    }
+
+    .start {
+      background: #2563eb;
+      color: white;
     }
 
     .close {
@@ -79,240 +95,538 @@
       color: white;
     }
 
-    .hidden { display: none; }
+    .hidden {
+      display: none;
+    }
 
     #debug {
       margin-top: 15px;
       color: #94a3b8;
       font-size: 12px;
       word-break: break-word;
+      text-align: left;
     }
   </style>
+
 </head>
 
 <body>
+
 <div class="container">
 
   <h1>📷 สแกน QR ตรวจเวร</h1>
 
   <div class="subtitle">
-    กรุณาหันกล้องไปที่ QR จุดตรวจ
+    กดปุ่มด้านล่างเพื่อเปิดกล้อง
   </div>
 
   <div id="reader"></div>
 
   <div id="status" class="status">
-    กำลังเตรียมกล้อง...
+    พร้อมเปิดกล้อง
   </div>
 
-  <button id="retryButton" class="button retry hidden" onclick="startScanner()">
-    🔄 เปิดกล้องอีกครั้ง
-  </button>
+<button
+ id="startButton"
+ class="button start"
+ onclick="startScanner()">
+📷 เปิดกล้อง </button>
 
-  <button class="button close" onclick="closeCamera()">
-    ✕ ปิดกล้อง
-  </button>
+<button
+ id="retryButton"
+ class="button retry hidden"
+ onclick="startScanner()">
+🔄 เปิดกล้องอีกครั้ง </button>
+
+<button
+ class="button close"
+ onclick="closeCamera()">
+✕ ปิดกล้อง </button>
 
   <div id="debug"></div>
 
 </div>
 
 <script>
+
   let scanner = null;
   let scannerRunning = false;
   let sendingQR = false;
 
+
+  /* =========================
+     STATUS
+  ========================= */
+
   function setStatus(message, type) {
+
     const el = document.getElementById("status");
+
     el.textContent = message;
+
     el.className = "status";
-    if (type) el.classList.add(type);
+
+    if (type) {
+      el.classList.add(type);
+    }
   }
 
+
+  /* =========================
+     QR FORMAT
+  ========================= */
+
   function extractQR(raw) {
+
     if (!raw) return null;
 
     const text = String(raw).trim();
+
     const match = text.match(/QR-\d+/i);
 
-    if (!match) return null;
+    if (!match) {
+      return null;
+    }
 
     return match[0].toUpperCase();
   }
 
-  async function startScanner() {
-    if (scannerRunning) return;
 
-    document.getElementById("retryButton").classList.add("hidden");
-    setStatus("📷 กำลังเปิดกล้อง...");
+  /* =========================
+     START CAMERA
+  ========================= */
+
+  async function startScanner() {
+
+    if (scannerRunning) {
+      return;
+    }
+
+    document
+      .getElementById("startButton")
+      .classList.add("hidden");
+
+    document
+      .getElementById("retryButton")
+      .classList.add("hidden");
+
+    document.getElementById("debug").textContent = "";
+
+    setStatus("📷 กำลังขอสิทธิ์ใช้กล้อง...");
+
 
     try {
-      if (typeof Html5Qrcode === "undefined") {
-        throw new Error("ไม่สามารถโหลดระบบสแกน QR ได้");
+
+      /* ---------------------------------
+         ตรวจ browser / HTTPS
+      --------------------------------- */
+
+      if (!window.isSecureContext) {
+
+        throw new Error(
+          "หน้านี้ไม่ได้เปิดผ่าน HTTPS\n" +
+          "กรุณาเปิดผ่าน https://"
+        );
       }
 
+
+      /* ---------------------------------
+         ตรวจ getUserMedia
+      --------------------------------- */
+
+      if (
+        !navigator.mediaDevices ||
+        !navigator.mediaDevices.getUserMedia
+      ) {
+
+        throw new Error(
+          "เบราว์เซอร์นี้ไม่รองรับการเปิดกล้อง"
+        );
+      }
+
+
+      /* ---------------------------------
+         ขอ Camera Permission โดยตรง
+         ต้องเกิดจากการกดปุ่มของผู้ใช้
+      --------------------------------- */
+
+      setStatus("📷 กำลังขออนุญาตใช้กล้อง...");
+
+      const stream =
+        await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: "environment"
+          },
+          audio: false
+        });
+
+
+      /* ---------------------------------
+         ได้ permission แล้ว
+         ปิด stream ชั่วคราว
+      --------------------------------- */
+
+      stream.getTracks().forEach(function(track) {
+        track.stop();
+      });
+
+
+      /* ---------------------------------
+         สร้าง scanner
+      --------------------------------- */
+
       if (scanner) {
-        try { await scanner.stop(); } catch (e) {}
-        try { scanner.clear(); } catch (e) {}
+
+        try {
+          await scanner.stop();
+        } catch (e) {}
+
+        try {
+          scanner.clear();
+        } catch (e) {}
+
         scanner = null;
       }
 
+
       scanner = new Html5Qrcode("reader");
 
+
+      /* ---------------------------------
+         เริ่ม scanner
+      --------------------------------- */
+
       await scanner.start(
-        { facingMode: { exact: "environment" } },
+
+        {
+          facingMode: "environment"
+        },
+
         {
           fps: 10,
-          qrbox: { width: 250, height: 250 },
+
+          qrbox: {
+            width: 250,
+            height: 250
+          },
+
           aspectRatio: 1.0,
-          rememberLastUsedCamera: true,
+
           supportedScanTypes: [
             Html5QrcodeScanType.SCAN_TYPE_CAMERA
           ]
         },
+
         onScanSuccess,
+
         onScanFailure
+
       );
+
 
       scannerRunning = true;
 
-      setStatus("📷 เปิดกล้องแล้ว\nนำกล้องไปส่อง QR จุดตรวจ");
+      setStatus(
+        "📷 เปิดกล้องแล้ว\nนำกล้องไปส่อง QR จุดตรวจ"
+      );
+
 
     } catch (error) {
+
       scannerRunning = false;
 
-      console.error(error);
+      console.error("CAMERA ERROR", error);
 
-      let message = "ไม่สามารถเปิดกล้องได้";
+
+      let message =
+        "❌ ไม่สามารถเปิดกล้องได้";
+
+
+      if (error && error.name) {
+
+        message +=
+          "\n\nชนิดข้อผิดพลาด: " +
+          error.name;
+      }
+
 
       if (error && error.message) {
-        message += "\n\n" + error.message;
+
+        message +=
+          "\n" +
+          error.message;
       }
+
+
+      /* ---------------------------------
+         กรณี Permission ถูกปฏิเสธ
+      --------------------------------- */
+
+      if (
+        error &&
+        (
+          error.name === "NotAllowedError" ||
+          error.name === "PermissionDeniedError"
+        )
+      ) {
+
+        message =
+          "❌ Chrome ไม่ได้รับอนุญาตให้ใช้กล้อง\n\n" +
+          "ตรวจสอบที่:\n" +
+          "การตั้งค่า iPhone → ความเป็นส่วนตัวและความปลอดภัย → กล้อง → Chrome\n\n" +
+          "แล้วเปิดอนุญาตกล้อง จากนั้นกดเปิดกล้องอีกครั้ง";
+      }
+
 
       setStatus(message, "error");
 
-      document.getElementById("retryButton").classList.remove("hidden");
+
+      document
+        .getElementById("retryButton")
+        .classList.remove("hidden");
+
 
       document.getElementById("debug").textContent =
-        "Camera error: " + String(error);
+        "Camera error: " +
+        String(error);
     }
   }
 
+
+  /* =========================
+     SCAN FAILURE
+  ========================= */
+
   function onScanFailure(errorMessage) {
-    // ไม่แสดง error ระหว่างที่กล้องกำลังค้นหา QR
+
+    /*
+      ไม่ต้องแสดง error
+      ขณะกล้องกำลังค้นหา QR
+    */
+
   }
 
+
+  /* =========================
+     SCAN SUCCESS
+  ========================= */
+
   async function onScanSuccess(decodedText) {
-    if (sendingQR) return;
+
+    if (sendingQR) {
+      return;
+    }
+
 
     const qr = extractQR(decodedText);
 
+
     if (!qr) {
+
       setStatus(
         "⚠️ พบ QR แต่ไม่ใช่ QR จุดตรวจของระบบ",
         "error"
       );
+
       return;
     }
 
+
     sendingQR = true;
 
-    setStatus("⏳ พบ " + qr + "\nกำลังส่งกลับระบบ...");
+
+    setStatus(
+      "⏳ พบ " + qr +
+      "\nกำลังส่งกลับระบบ..."
+    );
+
 
     try {
+
+      /*
+        ส่ง QR กลับหน้าระบบตรวจเวร
+      */
+
       if (!window.opener) {
-        throw new Error("ไม่พบหน้าระบบตรวจเวรเดิม");
+
+        throw new Error(
+          "ไม่พบหน้าระบบตรวจเวรเดิม"
+        );
       }
 
+
       window.opener.postMessage(
+
         {
           type: "PATROL_QR_SCAN",
           qr: qr
         },
+
         "*"
+
       );
 
-      setStatus("⏳ ส่ง " + qr + " ไปตรวจสอบแล้ว...");
+
+      setStatus(
+        "⏳ ส่ง " + qr +
+        " ไปตรวจสอบแล้ว..."
+      );
+
+
     } catch (error) {
+
       sendingQR = false;
+
 
       setStatus(
         "❌ ไม่สามารถส่ง QR กลับระบบได้",
         "error"
       );
+
+
+      document.getElementById("debug").textContent =
+        String(error);
     }
   }
 
-  window.addEventListener("message", async function(event) {
-    const data = event.data;
 
-    if (!data) return;
-    if (data.type !== "PATROL_QR_RESULT") return;
+  /* =========================
+     RECEIVE RESULT
+  ========================= */
 
-    if (data.accepted === true) {
+  window.addEventListener(
+    "message",
+    async function(event) {
+
+      const data = event.data;
+
+
+      if (!data) {
+        return;
+      }
+
+
+      if (data.type !== "PATROL_QR_RESULT") {
+        return;
+      }
+
+
+      /* =========================
+         QR ผ่าน
+      ========================= */
+
+      if (data.accepted === true) {
+
+        setStatus(
+          "✅ QR ผ่านการตรวจสอบ\n" +
+          "กำลังกลับหน้าระบบตรวจเวร...",
+          "success"
+        );
+
+
+        await stopScanner();
+
+
+        setTimeout(function() {
+
+          try {
+            window.close();
+          } catch (e) {}
+
+        }, 500);
+
+
+        return;
+      }
+
+
+      /* =========================
+         QR ไม่ผ่าน
+      ========================= */
+
+      sendingQR = false;
+
+
       setStatus(
-        "✅ QR ผ่านการตรวจสอบ\nกำลังกลับหน้าระบบตรวจเวร...",
-        "success"
+
+        "❌ QR ไม่ผ่าน\n" +
+        (
+          data.message ||
+          "ไม่ใช่ QR ที่ใช้ได้ในรอบนี้"
+        ),
+
+        "error"
+
       );
 
-      await stopScanner();
 
       setTimeout(function() {
-        try {
-          window.close();
-        } catch (e) {}
-      }, 500);
 
+        if (scannerRunning) {
+
+          setStatus(
+            "📷 กล้องพร้อมสแกนอีกครั้ง"
+          );
+
+        }
+
+      }, 2000);
+
+    }
+  );
+
+
+  /* =========================
+     STOP CAMERA
+  ========================= */
+
+  async function stopScanner() {
+
+    if (!scanner) {
       return;
     }
 
-    sendingQR = false;
-
-    setStatus(
-      "❌ QR ไม่ผ่าน\n" +
-      (data.message || "ไม่ใช่ QR ที่ใช้ได้ในรอบนี้"),
-      "error"
-    );
-
-    setTimeout(function() {
-      if (scannerRunning) {
-        setStatus("📷 กล้องพร้อมสแกนอีกครั้ง");
-      }
-    }, 2000);
-  });
-
-  async function stopScanner() {
-    if (!scanner) return;
 
     try {
+
       if (scannerRunning) {
         await scanner.stop();
       }
+
     } catch (e) {}
+
 
     try {
       scanner.clear();
     } catch (e) {}
 
+
     scanner = null;
+
     scannerRunning = false;
   }
 
+
+  /* =========================
+     CLOSE CAMERA
+  ========================= */
+
   async function closeCamera() {
+
     await stopScanner();
+
 
     try {
       window.close();
     } catch (e) {}
 
+
     setStatus(
-      "ปิดกล้องแล้ว สามารถกลับไปยังหน้าระบบตรวจเวรได้"
+      "ปิดกล้องแล้ว\nสามารถกลับไปยังหน้าระบบตรวจเวรได้"
     );
   }
 
-  window.addEventListener("load", function() {
-    setTimeout(startScanner, 300);
-  });
+
 </script>
 
 </body>
